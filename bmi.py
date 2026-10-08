@@ -1,760 +1,1480 @@
 import tkinter as tk
 from tkinter import messagebox
+import string
+import secrets
 import sqlite3
-import datetime
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import csv
+from pathlib import Path
 
-COLORS = {
-    "background": "#F5F7F4",
-    "header": "#82BDBB",
-    "header_title": "#123B69",
-    "header_subtitle": "#E4F4F0",
-    "card": "#B2E4D4",
-    "card_border": "#9CD8C8",
-    "input": "#F1FAF7",
-    "input_border": "#B7D2CC",
-    "text": "#263238",
-    "muted": "#64748B",
-    "white": "#FFFFFF",
-    "accent": "#2D60CE",
-    "accent_hover": "#214EAE",
-}
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None
+
+PROJECT_DIR = Path(__file__).resolve().parent
+DATABASE_PATH = PROJECT_DIR / "password_history.db"
 
 
 def create_database():
-    try:
-        connection = sqlite3.connect("bmi_data.db")
-        cursor = connection.cursor()
+    connection = sqlite3.connect(DATABASE_PATH)
+    cursor = connection.cursor()
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS bmi_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                weight REAL NOT NULL,
-                height REAL NOT NULL,
-                bmi REAL NOT NULL,
-                category TEXT NOT NULL,
-                date TEXT NOT NULL
-            )
-        """)
-
-        connection.commit()
-        connection.close()
-
-    except sqlite3.Error as error:
-        messagebox.showerror(
-            "Database Error",
-            f"Could not create database.\n\n{error}"
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS password_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            password TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    """)
+
+    connection.commit()
+    connection.close()
 
 
-def calculate_bmi():
-    try:
-        name = name_entry.get().strip()
-        weight = float(weight_entry.get())
-        height = float(height_entry.get())
+def save_password(password):
+    connection = sqlite3.connect(DATABASE_PATH)
+    cursor = connection.cursor()
 
-        if name == "":
-            messagebox.showerror(
-                "Missing Name",
-                "Please enter your name."
-            )
-            return
-
-        if weight <= 0:
-            messagebox.showerror(
-                "Invalid Weight",
-                "Please enter a positive weight."
-            )
-            return
-
-        if height <= 0:
-            messagebox.showerror(
-                "Invalid Height",
-                "Please enter a positive height."
-            )
-            return
-
-        bmi = weight / (height ** 2)
-
-        if bmi < 18.5:
-            category = "Underweight"
-            result_color = "#f59e0b"
-        elif bmi < 25:
-            category = "Normal"
-            result_color = "#16a34a"
-        elif bmi < 30:
-            category = "Overweight"
-            result_color = "#f59e0b"
-        else:
-            category = "Obese"
-            result_color = "#dc2626"
-
-        result_label.config(
-            text=f"Hello, {name}!\nBMI: {bmi:.2f}\nCategory: {category}",
-            fg=result_color
-        )
-
-        connection = sqlite3.connect("bmi_data.db")
-        cursor = connection.cursor()
-
-        cursor.execute("""
-            INSERT INTO bmi_records
-            (name, weight, height, bmi, category, date)
-            VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
-        """, (name, weight, height, bmi, category))
-
-        connection.commit()
-        connection.close()
-
-        name_entry.delete(0, tk.END)
-        weight_entry.delete(0, tk.END)
-        height_entry.delete(0, tk.END)
-
-        
-
-    except ValueError:
-        messagebox.showerror(
-            "Invalid Input",
-            "Please enter numbers only for weight and height."
-        )
-
-    except sqlite3.Error as error:
-        messagebox.showerror(
-            "Database Error",
-            f"Could not save the record.\n\n{error}"
-        )
-
-
-def show_history():
-    history_window = tk.Toplevel(window)
-    history_window.title("BMI History")
-    history_window.geometry("800x500")
-    history_window.configure(bg="#f8fafc")
-
-    title = tk.Label(
-        history_window,
-        text="BMI History",
-        font=("Arial", 20, "bold"),
-        bg="#f8fafc",
-        fg="#0f172a"
-    )
-    title.pack(pady=(15, 5))
-
-    search_frame = tk.Frame(
-        history_window,
-        bg="#f8fafc"
-    )
-    search_frame.pack(pady=5)
-
-    search_label = tk.Label(
-        search_frame,
-        text="Search User:",
-        font=("Arial", 11, "bold"),
-        bg="#f8fafc",
-        fg="#334155"
-    )
-    search_label.pack(side="left", padx=5)
-
-    search_entry = tk.Entry(
-        search_frame,
-        width=25,
-        font=("Arial", 11),
-        relief="solid",
-        bd=1
-    )
-    search_entry.pack(side="left", padx=5)
-
-    scrollbar = tk.Scrollbar(history_window)
-    scrollbar.pack(side="right", fill="y")
-
-    history_text = tk.Text(
-        history_window,
-        yscrollcommand=scrollbar.set,
-        font=("Consolas", 10),
-        bg="white",
-        fg="#1e293b",
-        relief="solid",
-        bd=1
-    )
-    history_text.pack(
-        fill="both",
-        expand=True,
-        padx=15,
-        pady=10
+    cursor.execute(
+        "INSERT INTO password_history (password) VALUES (?)",
+        (password,)
     )
 
-    scrollbar.config(command=history_text.yview)
-
-    def load_records():
-        history_text.config(state="normal")
-        history_text.delete("1.0", tk.END)
-
-        try:
-            connection = sqlite3.connect("bmi_data.db")
-            cursor = connection.cursor()
-
-            user_name = search_entry.get().strip()
-
-            if user_name:
-                cursor.execute("""
-                    SELECT name, bmi, category, date
-                    FROM bmi_records
-                    WHERE name LIKE ?
-                    ORDER BY id DESC
-                """, (f"%{user_name}%",))
-            else:
-                cursor.execute("""
-                    SELECT name, bmi, category, date
-                    FROM bmi_records
-                    ORDER BY id DESC
-                    LIMIT 50
-                """)
-
-            records = cursor.fetchall()
-            connection.close()
-
-            history_text.insert(
-                "end",
-                "Name\tBMI\tCategory\tDate\n"
-            )
-            history_text.insert(
-                "end",
-                "-" * 90 + "\n"
-            )
-
-            for record in records:
-                history_text.insert(
-                    "end",
-                    f"{record[0]}\t"
-                    f"{record[1]:.2f}\t"
-                    f"{record[2]}\t"
-                    f"{record[3]}\n"
-                )
-
-            history_text.config(state="disabled")
-
-        except sqlite3.Error as error:
-            messagebox.showerror(
-                "Database Error",
-                str(error)
-            )
-
-    search_button = tk.Button(
-        search_frame,
-        text="Search",
-        font=("Arial", 10, "bold"),
-        bg="#2563eb",
-        fg="white",
-        activebackground="#1d4ed8",
-        activeforeground="white",
-        relief="flat",
-        padx=15,
-        pady=5,
-        cursor="hand2",
-        command=load_records
-    )
-    search_button.pack(side="left", padx=5)
-
-    load_records()
-
-
-def show_graph():
-    try:
-        user_name = name_entry.get().strip()
-
-        if user_name == "":
-            messagebox.showerror(
-                "Missing Name",
-                "Please enter your name first."
-            )
-            return
-
-        connection = sqlite3.connect("bmi_data.db")
-        cursor = connection.cursor()
-
-        cursor.execute("""
-            SELECT bmi, date
-            FROM bmi_records
-            WHERE name LIKE ?
-            ORDER BY id ASC
-        """, (f"%{user_name}%",))
-
-        records = cursor.fetchall()
-        connection.close()
-
-        if not records:
-            messagebox.showinfo(
-                "No Data",
-                f"No BMI records found for {user_name}."
-            )
-            return
-
-        bmi_values = []
-        dates = []
-
-        for record in records:
-            bmi_values.append(record[0])
-            dates.append(
-                datetime.datetime.strptime(
-                    record[1],
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            )
-
-        plt.figure(figsize=(9, 5))
-
-        plt.plot(
-            dates,
-            bmi_values,
-            marker="o",
-            linewidth=2,
-            label="BMI"
+    cursor.execute("""
+        DELETE FROM password_history
+        WHERE id NOT IN (
+            SELECT id
+            FROM password_history
+            ORDER BY id DESC
+            LIMIT 5
         )
+    """)
 
-        for date, bmi in zip(dates, bmi_values):
-            plt.annotate(
-                f"{bmi:.2f}",
-                (date, bmi),
-                textcoords="offset points",
-                xytext=(0, 8),
-                ha="center"
-            )
-
-        plt.axhline(y=18.5, linestyle="--", linewidth=1)
-        plt.axhline(y=25, linestyle="--", linewidth=1)
-        plt.axhline(y=30, linestyle="--", linewidth=1)
-
-        plt.text(dates[0], 18.5, " Underweight", va="bottom")
-        plt.text(dates[0], 25, " Normal", va="bottom")
-        plt.text(dates[0], 30, " Overweight", va="bottom")
-
-        plt.title(
-            f"BMI Trend - {user_name}",
-            fontsize=16,
-            fontweight="bold"
-        )
-
-        plt.xlabel("Date", fontsize=11)
-        plt.ylabel("BMI", fontsize=11)
-
-        plt.gca().xaxis.set_major_formatter(
-            mdates.DateFormatter("%b %d")
-        )
-
-        plt.xticks(rotation=45, ha="right")
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    except ValueError:
-        messagebox.showerror(
-            "Date Error",
-            "Could not process the date data."
-        )
-
-    except sqlite3.Error as error:
-        messagebox.showerror(
-            "Database Error",
-            f"Could not load BMI data.\n\n{error}"
-        )
+    connection.commit()
+    connection.close()
 
 
-def clear_database():
-    confirm = messagebox.askyesno(
-        "Confirm Delete",
-        "Are you sure?\n\n"
-        "All BMI records will be permanently deleted."
-    )
+def load_password_history():
+    connection = sqlite3.connect(DATABASE_PATH)
+    cursor = connection.cursor()
 
-    if not confirm:
-        return
+    cursor.execute("""
+        SELECT password
+        FROM password_history
+        ORDER BY id DESC
+        LIMIT 5
+    """)
 
-    try:
-        connection = sqlite3.connect("bmi_data.db")
-        cursor = connection.cursor()
+    records = cursor.fetchall()
 
-        cursor.execute("DELETE FROM bmi_records")
+    connection.close()
 
-        connection.commit()
-        connection.close()
-
-        messagebox.showinfo(
-            "Success",
-            "All BMI records have been deleted."
-        )
-
-    except sqlite3.Error as error:
-        messagebox.showerror(
-            "Database Error",
-            f"Could not delete records.\n\n{error}"
-        )
+    return [record[0] for record in records]
 
 
-def export_to_csv():
-    try:
-        connection = sqlite3.connect("bmi_data.db")
-        cursor = connection.cursor()
+def clear_password_history():
+    connection = sqlite3.connect(DATABASE_PATH)
+    cursor = connection.cursor()
 
-        cursor.execute("""
-            SELECT name, weight, height, bmi, category, date
-            FROM bmi_records
-        """)
+    cursor.execute("DELETE FROM password_history")
 
-        records = cursor.fetchall()
-        connection.close()
+    connection.commit()
+    connection.close()
 
-        if not records:
-            messagebox.showinfo(
-                "No Data",
-                "No records found to export."
-            )
-            return
-
-        with open(
-            "bmi_export.csv",
-            "w",
-            newline="",
-            encoding="utf-8"
-        ) as file:
-
-            writer = csv.writer(file)
-
-            writer.writerow([
-                "Name",
-                "Weight",
-                "Height",
-                "BMI",
-                "Category",
-                "Date"
-            ])
-
-            writer.writerows(records)
-
-        messagebox.showinfo(
-            "Success",
-            "Data exported successfully!\n\n"
-            "File: bmi_export.csv"
-        )
-
-    except Exception as error:
-        messagebox.showerror(
-            "Export Error",
-            str(error)
-        )
-
-
-window = tk.Tk()
-window.title("BMI Calculator")
-window.iconbitmap("icon.ico")
-window.geometry("520x720")
-window.resizable(False, False)
-window.configure(bg=COLORS["background"])
-
-
-header_frame = tk.Frame(
-    window,
-    bg=COLORS["header"],
-    height=120
-)
-header_frame.pack(
-    fill="x"
-)
-
-title_label = tk.Label(
-    header_frame,
-    text="BMI Calculator",
-    font=("Arial", 25, "bold"),
-    bg=COLORS["header"],
-    fg=COLORS["header_title"],
-    anchor="center"
-)
-title_label.pack(fill="x", pady=(20, 3))
-
-subtitle_label = tk.Label(
-    header_frame,
-    text="Calculate your Body Mass Index",
-    font=("Arial", 11),
-    bg=COLORS["header"],
-    fg=COLORS["header_subtitle"]
-)
-subtitle_label.pack(fill="x")
-
-
-input_card = tk.Frame(
-    window,
-    bg=COLORS["card"],
-    bd=0,
-    highlightthickness=1,
-    highlightbackground=COLORS["card_border"]
-)
-input_card.pack(
-    padx=30,
-    pady=20,
-    fill="x"
-)
-input_card.grid_columnconfigure(0, weight=1)
-input_card.grid_columnconfigure(1, weight=1)
-
-input_title = tk.Label(
-    input_card,
-    text="Enter Your Details",
-    font=("Arial", 15, "bold"),
-    bg=COLORS["card"],
-    fg=COLORS["header_title"],
-    anchor="center"
-)
-input_title.grid(
-    row=0,
-    column=0,
-    columnspan=2,
-    pady=(15, 10),
-    sticky="ew"
-)
-
-
-name_label = tk.Label(
-    input_card,
-    text="Name",
-    font=("Arial", 11, "bold"),
-    bg=COLORS["card"],
-    fg=COLORS["text"]
-)
-name_label.grid(
-    row=1,
-    column=0,
-    padx=15,
-    pady=8,
-    sticky="w"
-)
-
-name_entry = tk.Entry(
-    input_card,
-    width=22,
-    font=("Arial", 11),
-    bg=COLORS["input"],
-    fg=COLORS["text"],
-    insertbackground=COLORS["text"],
-    relief="flat",
-    bd=0,
-    highlightthickness=1,
-    highlightbackground=COLORS["input_border"],
-    highlightcolor=COLORS["header"]
-)
-name_entry.grid(
-    row=1,
-    column=1,
-    padx=15,
-    pady=8
-)
-
-
-weight_label = tk.Label(
-    input_card,
-    text="Weight (kg)",
-    font=("Arial", 11, "bold"),
-    bg=COLORS["card"],
-    fg=COLORS["text"]
-)
-weight_label.grid(
-    row=2,
-    column=0,
-    padx=15,
-    pady=8,
-    sticky="w"
-)
-
-weight_entry = tk.Entry(
-    input_card,
-    width=22,
-    font=("Arial", 11),
-    bg=COLORS["input"],
-    fg=COLORS["text"],
-    insertbackground=COLORS["text"],
-    relief="flat",
-    bd=0,
-    highlightthickness=1,
-    highlightbackground=COLORS["input_border"],
-    highlightcolor=COLORS["header"]
-)
-weight_entry.grid(
-    row=2,
-    column=1,
-    padx=15,
-    pady=8
-)
-
-
-height_label = tk.Label(
-    input_card,
-    text="Height (m)",
-    font=("Arial", 11, "bold"),
-    bg=COLORS["card"],
-    fg=COLORS["text"]
-)
-height_label.grid(
-    row=3,
-    column=0,
-    padx=15,
-    pady=8,
-    sticky="w"
-)
-
-height_entry = tk.Entry(
-    input_card,
-    width=22,
-    font=("Arial", 11),
-    bg=COLORS["input"],
-    fg=COLORS["text"],
-    insertbackground=COLORS["text"],
-    relief="flat",
-    bd=0,
-    highlightthickness=1,
-    highlightbackground=COLORS["input_border"],
-    highlightcolor=COLORS["header"]
-)
-height_entry.grid(
-    row=3,
-    column=1,
-    padx=15,
-    pady=(8, 18)
-)
-
-
-calculate_button = tk.Button(
-    window,
-    text="Calculate BMI",
-    font=("Arial", 12, "bold"),
-    bg=COLORS["accent"],
-    fg=COLORS["white"],
-    activebackground=COLORS["accent_hover"],
-    activeforeground=COLORS["white"],
-    relief="flat",
-    cursor="hand2",
-    padx=30,
-    pady=10,
-    command=calculate_bmi
-)
-calculate_button.pack(pady=5)
-
-
-button_frame = tk.Frame(
-    window,
-    bg=COLORS["background"]
-)
-button_frame.pack(padx=24, pady=10, fill="x")
-
-for column in range(4):
-    button_frame.grid_columnconfigure(column, weight=1, uniform="actions")
-
-history_button = tk.Button(
-    button_frame,
-    text="View\nHistory",
-    font=("Arial", 9, "bold"),
-    bg=COLORS["header"],
-    fg=COLORS["text"],
-    activebackground=COLORS["card_border"],
-    activeforeground=COLORS["text"],
-    relief="flat",
-    cursor="hand2",
-    padx=4,
-    pady=6,
-    command=show_history
-)
-history_button.grid(row=0, column=0, padx=3, sticky="ew")
-
-graph_button = tk.Button(
-    button_frame,
-    text="BMI\nGraph",
-    font=("Arial", 9, "bold"),
-    bg=COLORS["header"],
-    fg=COLORS["text"],
-    activebackground=COLORS["card_border"],
-    activeforeground=COLORS["text"],
-    relief="flat",
-    cursor="hand2",
-    padx=4,
-    pady=6,
-    command=show_graph
-)
-graph_button.grid(row=0, column=1, padx=3, sticky="ew")
-
-export_button = tk.Button(
-    button_frame,
-    text="Export\nCSV",
-    font=("Arial", 9, "bold"),
-    bg=COLORS["header"],
-    fg=COLORS["text"],
-    activebackground=COLORS["card_border"],
-    activeforeground=COLORS["text"],
-    relief="flat",
-    cursor="hand2",
-    padx=4,
-    pady=6,
-    command=export_to_csv
-)
-export_button.grid(row=0, column=2, padx=3, sticky="ew")
-
-clear_button = tk.Button(
-    button_frame,
-    text="Clear\nData",
-    font=("Arial", 9, "bold"),
-    bg="#C94A45",
-    fg=COLORS["white"],
-    activebackground="#B53C37",
-    activeforeground=COLORS["white"],
-    relief="flat",
-    cursor="hand2",
-    padx=4,
-    pady=6,
-    command=clear_database
-)
-clear_button.grid(row=0, column=3, padx=3, sticky="ew")
-
-
-result_card = tk.Frame(
-    window,
-    bg=COLORS["white"],
-    highlightthickness=1,
-    highlightbackground=COLORS["input_border"]
-)
-result_card.pack(
-    padx=30,
-    pady=20,
-    fill="x"
-)
-
-result_title = tk.Label(
-    result_card,
-    text="Your Result",
-    font=("Arial", 14, "bold"),
-    bg=COLORS["white"],
-    fg=COLORS["text"]
-)
-result_title.pack(pady=(12, 5))
-
-
-result_label = tk.Label(
-    result_card,
-    text="Enter your details and calculate BMI",
-    font=("Arial", 12, "bold"),
-    bg=COLORS["white"],
-    fg=COLORS["muted"],
-    justify="center"
-)
-result_label.pack(pady=(5, 15))
-
-
-footer = tk.Label(
-    window,
-    text="Developed by Sayan Pramanik © 2026",
-    font=("Arial", 9)
-)
-
-footer.pack(side="bottom", pady=10)
 
 create_database()
-window.mainloop()
+
+
+THEMES = {
+    "light": {
+        "bg": "#F5F7FA",
+        "sidebar": "#172033",
+        "sidebar_text": "#FFFFFF",
+        "card": "#FFFFFF",
+        "text": "#172033",
+        "secondary": "#6B7280",
+        "border": "#D9DEE7",
+        "input": "#FFFFFF",
+        "button": "#2563EB",
+        "button_hover": "#1D4ED8",
+        "success": "#16A34A",
+        "warning": "#D97706",
+        "danger": "#DC2626",
+        "copy": "#EEF2FF"
+    },
+    "dark": {
+        "bg": "#111827",
+        "sidebar": "#0B1220",
+        "sidebar_text": "#FFFFFF",
+        "card": "#1F2937",
+        "text": "#F9FAFB",
+        "secondary": "#9CA3AF",
+        "border": "#374151",
+        "input": "#111827",
+        "button": "#3B82F6",
+        "button_hover": "#2563EB",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "copy": "#26324A"
+    }
+}
+
+
+root = tk.Tk()
+root.title("Advanced Random Password Generator")
+root.geometry("1000x680")
+root.minsize(700, 500)
+
+current_theme = "light"
+COLORS = THEMES[current_theme]
+
+pages = {}
+nav_buttons = {}
+
+history = load_password_history()
+
+length_var = tk.StringVar(value="16")
+password_var = tk.StringVar()
+strength_var = tk.StringVar(value="—")
+
+uppercase_var = tk.BooleanVar(value=True)
+lowercase_var = tk.BooleanVar(value=True)
+numbers_var = tk.BooleanVar(value=True)
+symbols_var = tk.BooleanVar(value=True)
+exclude_var = tk.BooleanVar(value=False)
+
+character_button = None
+password_entry = None
+copy_button = None
+strength_bar = None
+strength_label = None
+suggestion_frame = None
+suggestion_text = None
+main_canvas = None
+content_frame = None
+
+
+def clear_frame(frame):
+    for widget in frame.winfo_children():
+        widget.destroy()
+
+
+def create_card(parent):
+    return tk.Frame(
+        parent,
+        bg=COLORS["card"],
+        highlightbackground=COLORS["border"],
+        highlightthickness=1
+    )
+
+
+def styled_button(parent, text, command, width=18):
+    return tk.Button(
+        parent,
+        text=text,
+        command=command,
+        width=width,
+        height=2,
+        bg=COLORS["button"],
+        fg="white",
+        activebackground=COLORS["button_hover"],
+        activeforeground="white",
+        relief="flat",
+        bd=0,
+        font=("Segoe UI", 10, "bold"),
+        cursor="hand2"
+    )
+
+
+def selected_character_types():
+    selected = []
+
+    if uppercase_var.get():
+        selected.append("uppercase")
+
+    if lowercase_var.get():
+        selected.append("lowercase")
+
+    if symbols_var.get():
+        selected.append("symbols")
+
+    if numbers_var.get():
+        selected.append("numbers")
+
+    return selected
+
+
+def update_character_button():
+    selected = selected_character_types()
+
+    names = {
+        "uppercase": "Uppercase",
+        "lowercase": "Lowercase",
+        "symbols": "Symbols",
+        "numbers": "Numbers"
+    }
+
+    if len(selected) == 4:
+        text = "Upper + Lower + Symbol + Number"
+
+    elif selected:
+        text = " + ".join(names[item] for item in selected)
+
+    else:
+        text = "Select Character Types"
+
+    if character_button:
+        character_button.config(text=text)
+
+
+def choose_character_types():
+    popup = tk.Toplevel(root)
+    popup.title("Character Types")
+    popup.geometry("420x420")
+    popup.resizable(False, False)
+    popup.configure(bg=COLORS["bg"])
+    popup.transient(root)
+    popup.grab_set()
+
+    tk.Label(
+        popup,
+        text="Choose Character Types",
+        bg=COLORS["bg"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 16, "bold")
+    ).pack(pady=(25, 5))
+
+    tk.Label(
+        popup,
+        text="Select at least 2 types",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10)
+    ).pack(pady=(0, 20))
+
+    temp_vars = {
+        "uppercase": tk.BooleanVar(value=uppercase_var.get()),
+        "lowercase": tk.BooleanVar(value=lowercase_var.get()),
+        "symbols": tk.BooleanVar(value=symbols_var.get()),
+        "numbers": tk.BooleanVar(value=numbers_var.get())
+    }
+
+    options = [
+        ("Uppercase Letters", "uppercase"),
+        ("Lowercase Letters", "lowercase"),
+        ("Symbols", "symbols"),
+        ("Numbers", "numbers")
+    ]
+
+    for text, key in options:
+        tk.Checkbutton(
+            popup,
+            text=text,
+            variable=temp_vars[key],
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+            activebackground=COLORS["bg"],
+            activeforeground=COLORS["text"],
+            selectcolor=COLORS["card"],
+            font=("Segoe UI", 11),
+            anchor="w"
+        ).pack(
+            fill="x",
+            padx=60,
+            pady=5
+        )
+
+    def apply():
+        selected = [
+            key
+            for key, variable in temp_vars.items()
+            if variable.get()
+        ]
+
+        if len(selected) < 2:
+            messagebox.showerror(
+                "Invalid Character Selection",
+                "Please select at least 2 character types.",
+                parent=popup
+            )
+            return
+
+        if not temp_vars["uppercase"].get():
+            messagebox.showerror(
+                "Uppercase Required",
+                "Uppercase letters must be selected.",
+                parent=popup
+            )
+            return
+
+        uppercase_var.set(temp_vars["uppercase"].get())
+        lowercase_var.set(temp_vars["lowercase"].get())
+        symbols_var.set(temp_vars["symbols"].get())
+        numbers_var.set(temp_vars["numbers"].get())
+
+        update_character_button()
+
+        popup.destroy()
+
+    styled_button(
+        popup,
+        "Apply",
+        apply,
+        18
+    ).pack(pady=25)
+
+
+def generate_block(characters, count):
+    result = ""
+
+    for _ in range(count):
+        result += secrets.choice(characters)
+
+    return result
+
+
+def create_character_sets():
+
+    uppercase = string.ascii_uppercase
+    lowercase = string.ascii_lowercase
+    symbols = string.punctuation
+    numbers = string.digits
+
+    if exclude_var.get():
+
+        ambiguous = "O0oIl1"
+
+        uppercase = "".join(
+            c for c in uppercase
+            if c not in ambiguous
+        )
+
+        lowercase = "".join(
+            c for c in lowercase
+            if c not in ambiguous
+        )
+
+        numbers = "".join(
+            c for c in numbers
+            if c not in ambiguous
+        )
+
+        symbols = "".join(
+            c for c in symbols
+            if c not in ambiguous
+        )
+
+    return {
+        "uppercase": uppercase,
+        "lowercase": lowercase,
+        "symbols": symbols,
+        "numbers": numbers
+    }
+
+
+def generate_password():
+
+    try:
+        length = int(length_var.get())
+
+    except ValueError:
+        messagebox.showerror(
+            "Invalid Length",
+            "Please enter a valid password length."
+        )
+        return
+
+    if length < 8 or length > 64:
+        messagebox.showerror(
+            "Invalid Length",
+            "Password length must be between 8 and 64 characters."
+        )
+        return
+
+    selected = selected_character_types()
+
+    if len(selected) < 2:
+        messagebox.showerror(
+            "Character Types",
+            "Please select at least 2 character types."
+        )
+        return
+
+    if "uppercase" not in selected:
+        messagebox.showerror(
+            "Uppercase Required",
+            "Uppercase letters must be selected."
+        )
+        return
+
+    character_sets = create_character_sets()
+
+    for choice in selected:
+
+        if not character_sets[choice]:
+            messagebox.showerror(
+                "Character Error",
+                "No characters are available for the selected type."
+            )
+            return
+
+    counts = {}
+
+    for choice in selected:
+        counts[choice] = 1
+
+    remaining = length - len(selected)
+
+    priority = [
+        "uppercase",
+        "lowercase",
+        "symbols",
+        "numbers"
+    ]
+
+    for choice in priority:
+
+        if choice not in selected:
+            continue
+
+        if remaining <= 0:
+            break
+
+        if choice == "uppercase":
+            extra = secrets.choice([0, 1, 2])
+
+        elif choice == "lowercase":
+            extra = secrets.choice([1, 2, 3, 4])
+
+        elif choice == "symbols":
+            extra = secrets.choice([0, 1, 2])
+
+        else:
+            extra = remaining
+
+        extra = min(extra, remaining)
+
+        counts[choice] += extra
+        remaining -= extra
+
+    if remaining > 0:
+        counts[selected[-1]] += remaining
+
+    password = ""
+
+    for choice in priority:
+
+        if choice in selected:
+            password += generate_block(
+                character_sets[choice],
+                counts[choice]
+            )
+
+    password_var.set(password)
+
+    copy_to_clipboard(password)
+
+    update_strength(
+        length,
+        len(selected)
+    )
+
+    save_password(password)
+
+    history.clear()
+    history.extend(load_password_history())
+
+    refresh_history_page()
+
+
+def copy_to_clipboard(password):
+
+    try:
+
+        if pyperclip:
+            pyperclip.copy(password)
+
+        else:
+            root.clipboard_clear()
+            root.clipboard_append(password)
+            root.update()
+
+    except Exception:
+
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(password)
+            root.update()
+
+        except Exception:
+            pass
+
+
+def copy_password():
+
+    password = password_var.get()
+
+    if not password:
+
+        messagebox.showwarning(
+            "Copy Password",
+            "Generate a password first."
+        )
+
+        return
+
+    copy_to_clipboard(password)
+
+    copy_button.config(text="✓")
+
+    root.after(
+        1200,
+        lambda: copy_button.config(text="📋")
+    )
+
+
+def update_strength(length, types):
+
+    global strength_bar
+    global strength_label
+
+    if length >= 16 and types >= 4:
+
+        strength = "STRONG"
+        strength_color = COLORS["success"]
+        bar_width = 260
+
+    elif length >= 14 and types >= 3:
+
+        strength = "STRONG"
+        strength_color = COLORS["success"]
+        bar_width = 260
+
+    elif length >= 12 and types >= 3:
+
+        strength = "MEDIUM"
+        strength_color = COLORS["warning"]
+        bar_width = 190
+
+    elif length >= 10 and types >= 2:
+
+        strength = "MEDIUM"
+        strength_color = COLORS["warning"]
+        bar_width = 190
+
+    else:
+
+        strength = "WEAK"
+        strength_color = COLORS["danger"]
+        bar_width = 100
+
+    strength_var.set(strength)
+
+    if strength_label:
+
+        strength_label.config(
+            text=strength,
+            fg=strength_color
+        )
+
+    if strength_bar:
+
+        strength_bar.config(
+            bg=strength_color,
+            width=bar_width
+        )
+
+    if suggestion_frame:
+
+        if strength == "WEAK":
+
+            suggestion_frame.pack(
+                fill="x",
+                pady=(20, 0)
+            )
+
+            suggestion_text.config(
+                text=(
+                    "💡  Password is Weak\n\n"
+                    "Try making your password stronger:\n"
+                    "• Use at least 12 characters\n"
+                    "• Add uppercase and lowercase letters\n"
+                    "• Add numbers\n"
+                    "• Add symbols such as @, #, $, _"
+                )
+            )
+
+        else:
+            suggestion_frame.pack_forget()
+
+
+def create_generator_page():
+
+    global character_button
+    global password_entry
+    global copy_button
+    global strength_bar
+    global strength_label
+    global suggestion_frame
+    global suggestion_text
+
+    frame = pages["generator"]
+
+    clear_frame(frame)
+
+    tk.Label(
+        frame,
+        text="Password Generator",
+        bg=COLORS["bg"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 24, "bold")
+    ).pack(
+        anchor="w",
+        pady=(5, 3)
+    )
+
+    tk.Label(
+        frame,
+        text="Create a secure and human-style password.",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        pady=(0, 20)
+    )
+
+    card = create_card(frame)
+
+    card.pack(
+        fill="x",
+        padx=5,
+        pady=5
+    )
+
+    inside = tk.Frame(
+        card,
+        bg=COLORS["card"]
+    )
+
+    inside.pack(
+        fill="both",
+        padx=30,
+        pady=28
+    )
+
+    tk.Label(
+        inside,
+        text="Password Length",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 10, "bold")
+    ).pack(anchor="w")
+
+    length_spinbox = tk.Spinbox(
+        inside,
+        from_=8,
+        to=64,
+        textvariable=length_var,
+        width=18,
+        bg=COLORS["input"],
+        fg=COLORS["text"],
+        buttonbackground=COLORS["input"],
+        insertbackground=COLORS["text"],
+        relief="solid",
+        bd=1,
+        font=("Segoe UI", 11)
+    )
+
+    length_spinbox.pack(
+        anchor="w",
+        pady=(6, 18)
+    )
+
+    tk.Label(
+        inside,
+        text="Allowed Length: 8 - 64 characters",
+        bg=COLORS["card"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 9)
+    ).pack(
+        anchor="w",
+        pady=(0, 18)
+    )
+
+    tk.Label(
+        inside,
+        text="Character Type",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 10, "bold")
+    ).pack(anchor="w")
+
+    character_button = tk.Button(
+        inside,
+        text="",
+        command=choose_character_types,
+        width=32,
+        height=2,
+        bg=COLORS["input"],
+        fg=COLORS["text"],
+        activebackground=COLORS["copy"],
+        activeforeground=COLORS["text"],
+        relief="solid",
+        bd=1,
+        font=("Segoe UI", 10),
+        cursor="hand2"
+    )
+
+    character_button.pack(
+        anchor="w",
+        pady=(6, 18)
+    )
+
+    update_character_button()
+
+    tk.Checkbutton(
+        inside,
+        text="Exclude Ambiguous Characters (O, 0, o, I, l, 1)",
+        variable=exclude_var,
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        activebackground=COLORS["card"],
+        activeforeground=COLORS["text"],
+        selectcolor=COLORS["input"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        pady=(0, 22)
+    )
+
+    tk.Label(
+        inside,
+        text="Password",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 10, "bold")
+    ).pack(anchor="w")
+
+    password_area = tk.Frame(
+        inside,
+        bg=COLORS["card"]
+    )
+
+    password_area.pack(
+        fill="x",
+        pady=(7, 22)
+    )
+
+    password_entry = tk.Entry(
+        password_area,
+        textvariable=password_var,
+        bg=COLORS["input"],
+        fg=COLORS["text"],
+        insertbackground=COLORS["text"],
+        relief="solid",
+        bd=1,
+        font=("Consolas", 13)
+    )
+
+    password_entry.pack(
+        side="left",
+        fill="x",
+        expand=True,
+        ipady=9
+    )
+
+    copy_button = tk.Button(
+        password_area,
+        text="📋",
+        command=copy_password,
+        width=5,
+        height=2,
+        bg=COLORS["copy"],
+        fg=COLORS["button"],
+        activebackground=COLORS["button"],
+        activeforeground="white",
+        relief="flat",
+        bd=0,
+        font=("Segoe UI", 13),
+        cursor="hand2"
+    )
+
+    copy_button.pack(
+        side="right",
+        padx=(8, 0)
+    )
+
+    strength_container = tk.Frame(
+        inside,
+        bg=COLORS["card"]
+    )
+
+    strength_container.pack(
+        fill="x"
+    )
+
+    tk.Label(
+        strength_container,
+        text="Password Strength",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 10, "bold")
+    ).pack(
+        side="left"
+    )
+
+    strength_label = tk.Label(
+        strength_container,
+        text="—",
+        bg=COLORS["card"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10, "bold")
+    )
+
+    strength_label.pack(
+        side="right"
+    )
+
+    strength_bar_background = tk.Frame(
+        inside,
+        bg=COLORS["border"],
+        height=8
+    )
+
+    strength_bar_background.pack(
+        fill="x",
+        pady=(7, 22)
+    )
+
+    strength_bar = tk.Frame(
+        strength_bar_background,
+        bg=COLORS["success"],
+        height=8,
+        width=0
+    )
+
+    strength_bar.pack(
+        side="left"
+    )
+
+    button_area = tk.Frame(
+        inside,
+        bg=COLORS["card"]
+    )
+
+    button_area.pack(
+        pady=5
+    )
+
+    styled_button(
+        button_area,
+        "GENERATE PASSWORD",
+        generate_password,
+        22
+    ).pack(
+        side="left",
+        padx=5
+    )
+
+    suggestion_frame = tk.Frame(
+        inside,
+        bg="#FEF2F2",
+        highlightbackground=COLORS["danger"],
+        highlightthickness=1
+    )
+
+    suggestion_text = tk.Label(
+        suggestion_frame,
+        text="",
+        bg="#FEF2F2",
+        fg="#991B1B",
+        justify="left",
+        anchor="w",
+        font=("Segoe UI", 10),
+        wraplength=650
+    )
+
+    suggestion_text.pack(
+        fill="x",
+        padx=15,
+        pady=13
+    )
+
+    suggestion_frame.pack_forget()
+
+
+def create_history_page():
+
+    frame = pages["history"]
+
+    clear_frame(frame)
+
+    tk.Label(
+        frame,
+        text="Password History",
+        bg=COLORS["bg"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 24, "bold")
+    ).pack(
+        anchor="w",
+        pady=(5, 3)
+    )
+
+    tk.Label(
+        frame,
+        text="Last 5 generated passwords saved permanently.",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        pady=(0, 20)
+    )
+
+    tk.Button(
+        frame,
+        text="CLEAR HISTORY",
+        command=delete_all_history,
+        bg=COLORS["danger"],
+        fg="white",
+        activebackground=COLORS["danger"],
+        activeforeground="white",
+        relief="flat",
+        bd=0,
+        font=("Segoe UI", 9, "bold"),
+        cursor="hand2"
+    ).pack(
+        anchor="e",
+        pady=(0, 10)
+    )
+
+    refresh_history_page()
+
+
+def refresh_history_page():
+
+    if "history" not in pages:
+        return
+
+    frame = pages["history"]
+
+    children = frame.winfo_children()
+
+    for widget in children[3:]:
+        widget.destroy()
+
+    saved_history = load_password_history()
+
+    history.clear()
+    history.extend(saved_history)
+
+    if not history:
+
+        tk.Label(
+            frame,
+            text="No passwords generated yet.",
+            bg=COLORS["bg"],
+            fg=COLORS["secondary"],
+            font=("Segoe UI", 11)
+        ).pack(
+            pady=50
+        )
+
+        return
+
+    for number, password in enumerate(history, 1):
+
+        row = tk.Frame(
+            frame,
+            bg=COLORS["card"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1
+        )
+
+        row.pack(
+            fill="x",
+            pady=5
+        )
+
+        tk.Label(
+            row,
+            text=str(number),
+            bg=COLORS["card"],
+            fg=COLORS["secondary"],
+            font=("Segoe UI", 10, "bold"),
+            width=4
+        ).pack(
+            side="left",
+            padx=(10, 0)
+        )
+
+        tk.Label(
+            row,
+            text=password,
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            font=("Consolas", 11),
+            anchor="w"
+        ).pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=10,
+            pady=12
+        )
+
+        tk.Button(
+            row,
+            text="📋",
+            command=lambda p=password: copy_history_password(p),
+            bg=COLORS["copy"],
+            fg=COLORS["button"],
+            activebackground=COLORS["button"],
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            font=("Segoe UI", 11),
+            cursor="hand2"
+        ).pack(
+            side="right",
+            padx=10
+        )
+
+
+def copy_history_password(password):
+    copy_to_clipboard(password)
+
+
+def delete_all_history():
+
+    if not history:
+
+        messagebox.showinfo(
+            "History",
+            "There is no password history to clear."
+        )
+
+        return
+
+    answer = messagebox.askyesno(
+        "Clear History",
+        "Are you sure you want to delete all saved password history?"
+    )
+
+    if not answer:
+        return
+
+    clear_password_history()
+
+    history.clear()
+
+    refresh_history_page()
+
+
+def create_settings_page():
+
+    frame = pages["settings"]
+
+    clear_frame(frame)
+
+    tk.Label(
+        frame,
+        text="Settings",
+        bg=COLORS["bg"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 24, "bold")
+    ).pack(
+        anchor="w",
+        pady=(5, 3)
+    )
+
+    tk.Label(
+        frame,
+        text="Customize your password generator.",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        pady=(0, 20)
+    )
+
+    appearance_card = create_card(frame)
+
+    appearance_card.pack(
+        fill="x",
+        pady=5
+    )
+
+    tk.Label(
+        appearance_card,
+        text="Appearance",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 13, "bold")
+    ).pack(
+        anchor="w",
+        padx=25,
+        pady=(20, 12)
+    )
+
+    light_var = tk.BooleanVar(
+        value=current_theme == "light"
+    )
+
+    dark_var = tk.BooleanVar(
+        value=current_theme == "dark"
+    )
+
+    def select_light():
+
+        light_var.set(True)
+        dark_var.set(False)
+
+        if current_theme != "light":
+            toggle_theme()
+
+    def select_dark():
+
+        dark_var.set(True)
+        light_var.set(False)
+
+        if current_theme != "dark":
+            toggle_theme()
+
+    tk.Checkbutton(
+        appearance_card,
+        text="Light",
+        variable=light_var,
+        command=select_light,
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        activebackground=COLORS["card"],
+        activeforeground=COLORS["text"],
+        selectcolor=COLORS["input"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        padx=25,
+        pady=5
+    )
+
+    tk.Checkbutton(
+        appearance_card,
+        text="Dark",
+        variable=dark_var,
+        command=select_dark,
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        activebackground=COLORS["card"],
+        activeforeground=COLORS["text"],
+        selectcolor=COLORS["input"],
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        padx=25,
+        pady=(5, 20)
+    )
+
+    about_card = create_card(frame)
+
+    about_card.pack(
+        fill="x",
+        pady=12
+    )
+
+    tk.Label(
+        about_card,
+        text="About",
+        bg=COLORS["card"],
+        fg=COLORS["text"],
+        font=("Segoe UI", 13, "bold")
+    ).pack(
+        anchor="w",
+        padx=25,
+        pady=(20, 5)
+    )
+
+    tk.Label(
+        about_card,
+        text=(
+            "Advanced Random Password Generator\n"
+            "Secure password generation using Python secrets.\n"
+            "SQLite stores the last 5 generated passwords."
+        ),
+        bg=COLORS["card"],
+        fg=COLORS["secondary"],
+        justify="left",
+        font=("Segoe UI", 10)
+    ).pack(
+        anchor="w",
+        padx=25,
+        pady=(5, 20)
+    )
+
+    footer = tk.Frame(
+        frame,
+        bg=COLORS["bg"]
+    )
+
+    footer.pack(
+        pady=(25, 20)
+    )
+
+    tk.Label(
+        footer,
+        text="Developed by Arijit Maity",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 10, "bold")
+    ).pack()
+
+    tk.Label(
+        footer,
+        text="© 2026 Arijit Maity",
+        bg=COLORS["bg"],
+        fg=COLORS["secondary"],
+        font=("Segoe UI", 9)
+    ).pack(
+        pady=(3, 0)
+    )
+
+
+def show_page(page_name):
+
+    for page in pages.values():
+        page.pack_forget()
+
+    pages[page_name].pack(
+        fill="both",
+        expand=True
+    )
+
+    for name, button in nav_buttons.items():
+
+        if name == page_name:
+
+            button.config(
+                bg=COLORS["button"],
+                fg="white"
+            )
+
+        else:
+
+            button.config(
+                bg=COLORS["sidebar"],
+                fg=COLORS["sidebar_text"]
+            )
+
+    if main_canvas:
+        main_canvas.yview_moveto(0)
+
+
+def create_sidebar():
+
+    sidebar = tk.Frame(
+        root,
+        bg=COLORS["sidebar"],
+        width=230
+    )
+
+    sidebar.pack(
+        side="left",
+        fill="y"
+    )
+
+    sidebar.pack_propagate(False)
+
+    tk.Label(
+        sidebar,
+        text="🔐",
+        bg=COLORS["sidebar"],
+        fg="white",
+        font=("Segoe UI Emoji", 30)
+    ).pack(
+        pady=(30, 5)
+    )
+
+    tk.Label(
+        sidebar,
+        text="Password\nGenerator",
+        bg=COLORS["sidebar"],
+        fg="white",
+        font=("Segoe UI", 15, "bold"),
+        justify="center"
+    ).pack(
+        pady=(0, 35)
+    )
+
+    navigation = [
+        ("generator", "🔐  Generator"),
+        ("history", "🕘  History"),
+        ("settings", "⚙  Settings")
+    ]
+
+    for page_name, text in navigation:
+
+        button = tk.Button(
+            sidebar,
+            text=text,
+            command=lambda p=page_name: show_page(p),
+            bg=COLORS["sidebar"],
+            fg=COLORS["sidebar_text"],
+            activebackground=COLORS["button"],
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            anchor="w",
+            padx=25,
+            font=("Segoe UI", 11),
+            cursor="hand2"
+        )
+
+        button.pack(
+            fill="x",
+            pady=3,
+            ipady=10
+        )
+
+        nav_buttons[page_name] = button
+
+
+def toggle_theme():
+
+    global current_theme
+    global COLORS
+
+    if current_theme == "light":
+        current_theme = "dark"
+
+    else:
+        current_theme = "light"
+
+    COLORS = THEMES[current_theme]
+
+    rebuild_ui()
+
+
+def rebuild_ui():
+
+    global main_canvas
+    global content_frame
+
+    for widget in root.winfo_children():
+        widget.destroy()
+
+    pages.clear()
+    nav_buttons.clear()
+
+    create_sidebar()
+
+    main_area = tk.Frame(
+        root,
+        bg=COLORS["bg"]
+    )
+
+    main_area.pack(
+        side="right",
+        fill="both",
+        expand=True
+    )
+
+    main_canvas = tk.Canvas(
+        main_area,
+        bg=COLORS["bg"],
+        highlightthickness=0
+    )
+
+    main_canvas.pack(
+        side="left",
+        fill="both",
+        expand=True
+    )
+
+    scrollbar = tk.Scrollbar(
+        main_area,
+        orient="vertical",
+        command=main_canvas.yview
+    )
+
+    scrollbar.pack(
+        side="right",
+        fill="y"
+    )
+
+    main_canvas.configure(
+        yscrollcommand=scrollbar.set
+    )
+
+    content_frame = tk.Frame(
+        main_canvas,
+        bg=COLORS["bg"]
+    )
+
+    canvas_window = main_canvas.create_window(
+        (0, 0),
+        window=content_frame,
+        anchor="nw"
+    )
+
+    def update_scroll_region(event=None):
+
+        main_canvas.configure(
+            scrollregion=main_canvas.bbox("all")
+        )
+
+    content_frame.bind(
+        "<Configure>",
+        update_scroll_region
+    )
+
+    def update_canvas_width(event):
+
+        main_canvas.itemconfig(
+            canvas_window,
+            width=event.width
+        )
+
+    main_canvas.bind(
+        "<Configure>",
+        update_canvas_width
+    )
+
+    def mouse_wheel(event):
+
+        main_canvas.yview_scroll(
+            int(-1 * (event.delta / 120)),
+            "units"
+        )
+
+    main_canvas.bind_all(
+        "<MouseWheel>",
+        mouse_wheel
+    )
+
+    pages["generator"] = tk.Frame(
+        content_frame,
+        bg=COLORS["bg"]
+    )
+
+    pages["history"] = tk.Frame(
+        content_frame,
+        bg=COLORS["bg"]
+    )
+
+    pages["settings"] = tk.Frame(
+        content_frame,
+        bg=COLORS["bg"]
+    )
+
+    create_generator_page()
+    create_history_page()
+    create_settings_page()
+
+    show_page("generator")
+
+
+rebuild_ui()
+
+root.mainloop()
